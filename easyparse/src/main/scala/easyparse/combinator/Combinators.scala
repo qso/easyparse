@@ -107,13 +107,18 @@ trait Combinators { this: Parsers =>
     private[this] val n = ps0.length
 
     def apply(ctx: ParseContext): MutableResult.MutableResult[T] = {
+      var greedyFailure: MutableResult.Failure = null
       @tailrec def rec(index: Int): MutableResult.MutableResult[T] = {
-        if (index >= n) failure(ctx.failure, "None the parsers match the input", ctx.input, List(ParseFrame(this, ctx.input)))
+        if (index >= n) trace(greedyFailure, ParseFrame(this, ctx.input))
         else ps0(index)(ctx) match {
           case s: MutableResult.Success[T] => s
           case f: MutableResult.Failure =>
             if (f.cut) trace(f, ParseFrame(this, ctx.input))
-            else rec(index + 1)
+            else {
+              if (greedyFailure == null || greedyFailure.next.pos < f.next.pos)
+                greedyFailure = f
+              rec(index + 1)
+            }
         }
       }
       ctx.logDepth += 1
@@ -191,7 +196,10 @@ trait Combinators { this: Parsers =>
       }
       ctx.logDepth += 1
       val ret = p(ctx) match {
-        case f: MutableResult.Failure => trace(f, ParseFrame(this, ctx.input))
+        case f: MutableResult.Failure =>
+          if (f.cut) trace(f, ParseFrame(this, ctx.input))
+          else if (min <= 0) success(ctx.success, Nil, ctx.input)
+          else failure(ctx.failure, s"Can't match enough $p (min = $min)", ctx.input, List(ParseFrame(this, ctx.input)))
         case s: MutableResult.Success[T] =>
           parserList += s.result
           rec(1, ParseContext(s.next, ctx.logDepth), s.cut)

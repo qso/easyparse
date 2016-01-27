@@ -1,6 +1,6 @@
 package scame
 
-import easyparse.combinator._
+import easyparse.Api._
 import util.Try
 import scala._
 
@@ -50,8 +50,6 @@ case class SchemePort(handler: Either[java.io.Reader, java.io.Writer]) extends S
   override def toString = "<IO port>"
 }
 
-
-
 object ScameParser extends RegexParsers {
   
   override def skipWhiteSpace = false
@@ -59,7 +57,7 @@ object ScameParser extends RegexParsers {
   def wholeNumber: Parser[String] =
     """-?\d+""".r
   
-  def atomLiteral: Parser[SchemeVal] = (letter | symbol) ~ (letter | digit | symbol).+ ^^ {
+  def atomLiteral: Parser[SchemeVal] = P((letter | symbol) ~ (letter | digit | symbol).* ^^ {
     case h ~ t ⇒ 
       val text = h.toString + t.mkString
       text match {
@@ -68,46 +66,54 @@ object ScameParser extends RegexParsers {
         case _ ⇒ SchemeAtom(text)
 
       }
-  }
+  })
   
-  def listLiteral: Parser[SchemeVal] = expr.rep(whiteSpace) ^^ (SchemeList(_))
+  def listLiteral: Parser[SchemeVal] = P(expr.rep(whiteSpace) ^^ (SchemeList(_)))
   
-  def dottedListLiteral: Parser[SchemeVal] = expr.rep(whiteSpace) ~ whiteSpace ~ '.' ~ whiteSpace ~ expr ^^ {
+  def dottedListLiteral: Parser[SchemeVal] = P(expr.rep(whiteSpace) ~ whiteSpace ~ '.' ~ whiteSpace ~ expr ^^ {
     case init ~ _ ~ '.' ~ _ ~ last ⇒ SchemeDottedList(init, last)
+  })
+  
+  def quoteLiteral: Parser[SchemeVal] = P {
+    '\'' ~> expr ^^ {x: SchemeVal ⇒ SchemeList(List(SchemeAtom("quote"), x))}
   }
   
-  def quoteLiteral: Parser[SchemeVal] = '\'' ~> expr ^^ {x: SchemeVal ⇒ SchemeList(List(SchemeAtom("quote"), x))}
-  
-  def intLiteral: Parser[SchemeVal] = wholeNumber ^^ {x: String ⇒ SchemeInt(x.toInt)}
+  def intLiteral: Parser[SchemeVal] = P {
+    wholeNumber ^^ {x: String ⇒ SchemeInt(x.toInt)}
+  }
   
 //  def doubleLiteral: Parser[SchemeVal] = floatingPointNumber ^^ {x: String ⇒ SchemeDouble(x.toDouble)}
   
-  def strLiteral: Parser[SchemeVal] = ("\""+"""([^"\p{Cntrl}\\]|\\[\\'"bfnrt]|\\u[a-fA-F0-9]{4})*+"""+"\"").r ^^ (ret => SchemeString(ret.drop(1).dropRight(1)))
+  def strLiteral: Parser[SchemeVal] = P {
+    ("\""+"""([^"\p{Cntrl}\\]|\\[\\'"bfnrt]|\\u[a-fA-F0-9]{4})*+"""+"\"").r ^^ (ret => SchemeString(ret.drop(1).dropRight(1)))
+  }
   
-  def expr: Parser[SchemeVal] = 
-    ( atomLiteral 
-    | quoteLiteral
-    | strLiteral
-//    | doubleLiteral
-    | intLiteral
-    | '(' ~> ( listLiteral | dottedListLiteral) <~ ')' )
-    
-  def exprList: Parser[List[SchemeVal]] = rule(whiteSpace.? ~> expr.rep(whiteSpace) <~ whiteSpace.?, "Expression List")
-    
+  def expr: Parser[SchemeVal] = P{
+    (atomLiteral
+      | quoteLiteral
+      | strLiteral
+      //    | doubleLiteral
+      | intLiteral
+      | '(' ~> whiteSpace.? ~> (listLiteral | dottedListLiteral) <~ whiteSpace.?  <~ ')')
+  }
+
+  def singleExpr: Parser[SchemeVal] = P(whiteSpace.? ~> expr <~ whiteSpace.?)
+  def exprList: Parser[List[SchemeVal]] = P(whiteSpace.? ~> expr.rep(whiteSpace) <~ whiteSpace.?)
+
   
   def symbol = elem("symbol", "!$%&|*+-/:<=?>@^_~#".contains(_))
   def letter = elem("letter", _.isLetter)
   def digit = elem("digit", _.isDigit)
   
   def parseExpr(s: java.lang.CharSequence): Try[SchemeVal] = {
-    parseAll(expr, s) match {
+    parseAll(singleExpr, s) match {
       case Success(value, _) ⇒ Try(value)
       case failure ⇒ Try(throw new ParseException(failure.toString))
     }
   }
   
   def parseExpr(s: java.io.Reader): Try[SchemeVal] = {
-    parseAll(expr, s) match {
+    parseAll(singleExpr, s) match {
       case Success(value, _) ⇒ Try(value)
       case failure ⇒ Try(throw new ParseException(failure.toString))
     }
@@ -181,17 +187,29 @@ class ScameREPL {
   var quitCmd = "quit"
   
   private def readPrompt() = {
-    println(prompt)
+    print(prompt)
     io.StdIn.readLine()
   }
   
   def run() {
+    def matchParentheses(s: String): Boolean = s.count(_ == '(') - s.count(_ == ')') <= 0
+    def isBlank(s: String): Boolean = s.trim == ""
+
     var stop = false
     val priEnv = PrimitiveFuncs.makeEnv
+    var exprStr = ""
     while (!stop) {
       val line = readPrompt()
       if (line == quitCmd) stop = true
-      else println(repl(priEnv, line))
+      else if (!isBlank(line)) {
+        exprStr += line
+        while (!matchParentheses(exprStr)) {
+          print(" " * prompt.length + "| ")
+          exprStr +=  " " + io.StdIn.readLine()
+        }
+        println(repl(priEnv, exprStr))
+        exprStr = ""
+      }
     }
   }
   

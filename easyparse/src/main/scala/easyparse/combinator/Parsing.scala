@@ -3,10 +3,9 @@ package combinator
 
 import easyparse.input.Reader
 import scala.util.DynamicVariable
-
+import scala.language.experimental.macros
 
 abstract class  Parsers extends Combinators with Terminals with Transformers { outer =>
-
   type Elem
 
   type Input = Reader[Elem]
@@ -31,6 +30,8 @@ abstract class  Parsers extends Combinators with Terminals with Transformers { o
     }
   }
 
+  implicit def enclosingFunctionName: Macros.FuncName = macro Macros.funcNameImpl
+
   /** A top-level parser that wrap the parser `p` into a lazy evaluated value
     *
     *  `rule(p, name)` return a `Rule` which name is `name`
@@ -39,7 +40,9 @@ abstract class  Parsers extends Combinators with Terminals with Transformers { o
     *  @param  name      A predicate that determines which elements match.
     *  @return
     */
-  def rule[T](p: => Parser[T], name: String) = Rule(() => p, name)
+  def P[T](p: => Parser[T])(implicit name: Macros.FuncName): Parser[T] = Rule(() => p, name.name)
+
+
 
   /** A parser matching input elements that satisfy a given predicate.
     *

@@ -1,18 +1,17 @@
-import easyparse.combinator.CharSeqParsers
-
-
-class TestParsers extends CharSeqParsers {
+import easyparse.Api._
+import easyparse.combinator.RegexParsers
+class TestParsers extends RegexParsers {
 
   traced = true
 
+  override def skipWhiteSpace = false
 
-  def rule = "haha" ~ ("gege" | "xixi" | "coco")
+  def rule = P("haha" ~ ("gege" | "xixi" | "coco"))
 
-  def rule2 = "ha".rep(sep = ",") | "123" ^^ {_.toInt}
+  def rule2 = P("ha".rep(whiteSpace) | "123" ^^ {_.toInt})
 
-  def rule3 = Either("12345", "12360")
-  def rule4 = rule("adsf", "rule4")
-
+  def rule3 = P(Either("12345", "12360"))
+  def rule4 = P("adsf")
 }
 val ps = new TestParsers
 //ps.parse(ps.rule, "hahatexixi") match {
@@ -20,7 +19,23 @@ val ps = new TestParsers
 //  case _ =>  "success"
 //}
 //ps.rule2
-//ps.parseAll(ps.rule2, "ha,ha,ha,ha,ha,haha")
+ps.parse(ps.rule2, "ha ha ha ha      ha     ")
 ps.parseAll(ps.rule3, "12367")
 //ps.parseAll(ps.stringLiteral, "asas")
 println(ps.parseAll(ps.rule4, "asdf"))
+//import easyparse.combinator.A
+//import scala.language.experimental.macros
+////import easyparse.Macros._
+//
+//
+//class B extends A {
+//  def hello2 = hello("beauty")
+//}
+//class C extends B {
+//  def hello3 = hello("shuaige")
+//}
+//val c = new C
+//c.hello3
+//
+//val b = new B
+//b.hello2
